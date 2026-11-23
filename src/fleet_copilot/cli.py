@@ -112,7 +112,7 @@ def audit_log(
     s = get_settings()
     ctx = SessionContext.open(company, settings=s)
     try:
-        rows = ctx.db.audit_entries(company)
+        rows = ctx.db.audit.entries(company)
     finally:
         ctx.close()
     if not rows:

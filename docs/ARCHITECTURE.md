@@ -46,7 +46,7 @@ architecture is organised around them:
 
 | Principle | Consequence in the code |
 |---|---|
-| **The model narrates; SQL computes.** | Answers come from deterministic queries ([`db.py`](../src/fleet_copilot/db.py)), not model recall. This buys grounding, reproducibility, and citations at once. |
+| **The model narrates; SQL computes.** | Answers come from deterministic queries (the [`data/`](../src/fleet_copilot/data/) repositories, with all SQL in [`queries.py`](../src/fleet_copilot/data/queries.py)), not model recall. This buys grounding, reproducibility, and citations at once. |
 | **Guardrails live in code, not the prompt.** | Tenant checks, approval, and evidence-gating are enforced at the tool/data layer, where they can't be prompt-injected away. |
 | **Tenant isolation is structural.** | Every query method *requires* `company_id`; there is no way to read a row without naming a tenant. |
 | **Humans approve all state changes.** | Action tools are never executed by the model's say-so; the graph pauses via `interrupt()`. |
@@ -67,7 +67,7 @@ flowchart TB
     GRAPH -->|reads/actions| REG["registry.py + tools/<br/>read & action tools"]
     GRAPH -->|plans/narrates| LLM["llm.py<br/>ChatAnthropic / fake"]
     GRAPH -->|citation check| GND["grounding.py<br/>evidence + verifier"]
-    REG --> DB["db.py<br/>tenant-scoped SQL"]
+    REG --> DB["data/ repositories<br/>SQL in queries.py"]
     GRAPH --> AUD["audit.py<br/>append-only log"]
     REG --> CTX["context.py<br/>SessionContext (tenant principal)"]
     DB --> SQLITE[("fleet.db<br/>SQLite")]
@@ -190,6 +190,13 @@ there must be real end-of-life telemetry. Only a justified action reaches the ap
 
 ## 6. Data layer & grounding
 
+The data layer follows a repository pattern so SQL never mixes with logic: all SQL text lives
+in [`data/queries.py`](../src/fleet_copilot/data/queries.py); the repositories
+([`data/repositories.py`](../src/fleet_copilot/data/repositories.py)) — `SnapshotRepository`,
+`ComplianceRepository`, `SoftwareRepository`, `AuditRepository` — run those queries; and the
+[`Database`](../src/fleet_copilot/data/database.py) unit of work owns the connection and exposes
+them as `db.snapshots`, `db.compliance`, `db.software`, `db.audit`.
+
 ### Ingestion
 
 [`ingest.py`](../src/fleet_copilot/ingest.py) flattens the nested NDJSON telemetry into an
@@ -231,7 +238,7 @@ not merely requested in the prompt.
 
 All four guardrails required by the brief are enforced in code:
 
-1. **Tenant isolation.** Every method on [`db.py`](../src/fleet_copilot/db.py) takes
+1. **Tenant isolation.** Every repository method ([`data/repositories.py`](../src/fleet_copilot/data/repositories.py)) takes
    `company_id` as a mandatory first argument; the value comes from the
    [`SessionContext`](../src/fleet_copilot/context.py) principal, injected by the tools node —
    never from the model. A cross-tenant action is refused before the approval gate.

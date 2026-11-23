@@ -6,14 +6,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .db import FleetDB
+from .data import Database
 from .settings import Settings, get_settings
 
 
 @dataclass
 class SessionContext:
     company_id: str
-    db: FleetDB
+    db: Database
     settings: Settings = field(default_factory=get_settings)
     actor: str = "copilot"
     trace_id: str = "trace-local"
@@ -29,8 +29,8 @@ class SessionContext:
         trace_id: str = "trace-local",
     ) -> SessionContext:
         settings = settings or get_settings()
-        db = FleetDB.connect(db_path or settings.db_path)
-        valid = db.companies()
+        db = Database.connect(db_path or settings.db_path)
+        valid = db.snapshots.companies()
         if company_id not in valid:
             db.close()
             raise ValueError(f"unknown tenant {company_id!r}; known tenants: {valid}")

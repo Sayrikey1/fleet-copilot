@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ..context import SessionContext
-from ..db import HISTORY_METRICS
+from ..data import HISTORY_METRICS
 from ..grounding import EvidenceRow, ReadResult
 from ..registry import read_tool
 
@@ -40,7 +40,7 @@ class EmptyParams(BaseModel):
     input_model=EmptyParams,
 )
 def get_fleet_summary(ctx: SessionContext, params: EmptyParams) -> ReadResult:
-    summary = ctx.db.fleet_summary(ctx.company_id)
+    summary = ctx.db.snapshots.fleet_summary(ctx.company_id)
     ev = _evidence(
         summary["devices"],
         "get_fleet_summary",
@@ -73,7 +73,7 @@ class DiskParams(BaseModel):
 )
 def find_devices_by_disk(ctx: SessionContext, params: DiskParams) -> ReadResult:
     thr = params.max_free_pct if params.max_free_pct is not None else ctx.settings.disk_low_free_pct
-    rows = ctx.db.devices_by_disk(ctx.company_id, thr, params.mode)
+    rows = ctx.db.snapshots.by_disk(ctx.company_id, thr, params.mode)
     ev = _evidence(rows, "find_devices_by_disk", ("value", "min_free_pct", "disk_available_bytes"))
     return ReadResult(
         summary=f"{len(rows)} device(s) in {ctx.company_id} at/below {thr:.0f}% free disk ({params.mode}).",
@@ -96,7 +96,7 @@ class MemoryParams(BaseModel):
 )
 def find_devices_by_memory(ctx: SessionContext, params: MemoryParams) -> ReadResult:
     thr = params.min_used_pct if params.min_used_pct is not None else ctx.settings.ram_high_used_pct
-    rows = ctx.db.devices_by_memory(ctx.company_id, thr)
+    rows = ctx.db.snapshots.by_memory(ctx.company_id, thr)
     ev = _evidence(rows, "find_devices_by_memory", ("value", "max_used_pct"))
     return ReadResult(
         summary=f"{len(rows)} device(s) in {ctx.company_id} with mean RAM use >= {thr:.0f}%.",
@@ -124,7 +124,7 @@ class BatteryParams(BaseModel):
 def find_devices_by_battery(ctx: SessionContext, params: BatteryParams) -> ReadResult:
     cycles = params.min_cycle_count if params.min_cycle_count is not None else ctx.settings.battery_eol_cycles
     conds = ctx.settings.battery_service_conditions if params.include_service_conditions else ()
-    rows = ctx.db.devices_by_battery(ctx.company_id, cycles, conds)
+    rows = ctx.db.snapshots.by_battery(ctx.company_id, cycles, conds)
     ev = _evidence(rows, "find_devices_by_battery", ("max_cycle_count", "battery_condition"))
     return ReadResult(
         summary=f"{len(rows)} device(s) in {ctx.company_id} with battery near end-of-life "
@@ -149,7 +149,7 @@ class OsParams(BaseModel):
     input_model=OsParams,
 )
 def find_devices_by_os(ctx: SessionContext, params: OsParams) -> ReadResult:
-    rows = ctx.db.devices_by_os(ctx.company_id, params.product_name, params.older_than_major)
+    rows = ctx.db.snapshots.by_os(ctx.company_id, params.product_name, params.older_than_major)
     ev = _evidence(rows, "find_devices_by_os", ("product_name", "os_version", "value"))
     return ReadResult(
         summary=f"{len(rows)} {params.product_name} device(s) in {ctx.company_id} older than major "
@@ -179,7 +179,7 @@ class ComplianceParams(BaseModel):
     input_model=ComplianceParams,
 )
 def get_compliance(ctx: SessionContext, params: ComplianceParams) -> ReadResult:
-    rows = ctx.db.compliance(
+    rows = ctx.db.compliance.query(
         ctx.company_id, check_id=params.check_id, severity=params.severity, status=params.status
     )
     ev = _evidence(rows, "get_compliance", ("check_id", "status", "severity"))
@@ -209,7 +209,7 @@ class DriftParams(BaseModel):
     input_model=DriftParams,
 )
 def detect_compliance_drift(ctx: SessionContext, params: DriftParams) -> ReadResult:
-    rows = ctx.db.compliance_drift(ctx.company_id, params.check_id, params.direction)
+    rows = ctx.db.compliance.drift(ctx.company_id, params.check_id, params.direction)
     ev = _evidence(rows, "detect_compliance_drift", ("check_id", "first_flip_at", "from_status", "to_status"))
     return ReadResult(
         summary=f"{len(rows)} device(s) in {ctx.company_id} drifted {params.direction} on "
@@ -236,11 +236,11 @@ class HistoryParams(BaseModel):
 def get_device_history(ctx: SessionContext, params: HistoryParams) -> ReadResult:
     if params.metric not in HISTORY_METRICS:
         return ReadResult(summary=f"Unknown metric {params.metric!r}.", evidence=[], data={})
-    if not ctx.db.device_in_tenant(ctx.company_id, params.device_id):
+    if not ctx.db.snapshots.device_in_tenant(ctx.company_id, params.device_id):
         return ReadResult(
             summary=f"Device {params.device_id} is not in {ctx.company_id}.", evidence=[], data={}
         )
-    rows = ctx.db.device_history(ctx.company_id, params.device_id, params.metric)
+    rows = ctx.db.snapshots.history(ctx.company_id, params.device_id, params.metric)
     ev = [
         EvidenceRow(
             device_id=params.device_id,
@@ -270,7 +270,7 @@ class SoftwareParams(BaseModel):
     input_model=SoftwareParams,
 )
 def list_software(ctx: SessionContext, params: SoftwareParams) -> ReadResult:
-    rows = ctx.db.software(ctx.company_id, name=params.name, device_id=params.device_id)
+    rows = ctx.db.software.query(ctx.company_id, name=params.name, device_id=params.device_id)
     ev = _evidence(rows, "list_software", ("name", "version", "publisher"))
     return ReadResult(
         summary=f"{len(rows)} software record(s) in {ctx.company_id}.",

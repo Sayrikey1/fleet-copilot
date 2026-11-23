@@ -34,7 +34,7 @@ def record(
     ts = _now()
     params_json = json.dumps(params, sort_keys=True, default=str)
     result_json = json.dumps(result, sort_keys=True, default=str) if result is not None else None
-    row_id = ctx.db.append_audit(
+    row_id = ctx.db.audit.append(
         ts=ts,
         trace_id=ctx.trace_id,
         company_id=ctx.company_id,

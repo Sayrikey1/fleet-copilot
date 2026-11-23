@@ -16,5 +16,6 @@ dist/
 .env
 
 # Generated runtime artifacts (rebuilt by `fleet-copilot seed` / runs)
-fleet.db
+*.db
+*.db-journal
 audit_log.jsonl

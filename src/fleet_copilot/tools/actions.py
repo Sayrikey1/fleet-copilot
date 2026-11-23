@@ -41,19 +41,19 @@ class UpgradeOrderParams(BaseModel):
 
 
 def _validate_upgrade(ctx: SessionContext, p: UpgradeOrderParams) -> ActionCheck:
-    if not ctx.db.device_in_tenant(ctx.company_id, p.device_id):
+    if not ctx.db.snapshots.device_in_tenant(ctx.company_id, p.device_id):
         return ActionCheck(allowed=False, reasons=[f"Device {p.device_id} is not in {ctx.company_id}."])
     component = p.component.lower().strip()
     if component in {"disk", "storage", "ssd"}:
-        rows = [r for r in ctx.db.devices_by_disk(ctx.company_id, ctx.settings.disk_low_free_pct, "mean")
+        rows = [r for r in ctx.db.snapshots.by_disk(ctx.company_id, ctx.settings.disk_low_free_pct, "mean")
                 if r["device_id"] == p.device_id]
         ev = _ev(rows, "find_devices_by_disk", ("value", "min_free_pct"))
     elif component in {"memory", "ram"}:
-        rows = [r for r in ctx.db.devices_by_memory(ctx.company_id, ctx.settings.ram_high_used_pct)
+        rows = [r for r in ctx.db.snapshots.by_memory(ctx.company_id, ctx.settings.ram_high_used_pct)
                 if r["device_id"] == p.device_id]
         ev = _ev(rows, "find_devices_by_memory", ("value", "max_used_pct"))
     elif component in {"battery"}:
-        rows = [r for r in ctx.db.devices_by_battery(ctx.company_id, ctx.settings.battery_eol_cycles,
+        rows = [r for r in ctx.db.snapshots.by_battery(ctx.company_id, ctx.settings.battery_eol_cycles,
                 ctx.settings.battery_service_conditions) if r["device_id"] == p.device_id]
         ev = _ev(rows, "find_devices_by_battery", ("max_cycle_count", "battery_condition"))
     else:
@@ -93,9 +93,9 @@ class RemediationTicketParams(BaseModel):
 
 
 def _validate_remediation(ctx: SessionContext, p: RemediationTicketParams) -> ActionCheck:
-    if not ctx.db.device_in_tenant(ctx.company_id, p.device_id):
+    if not ctx.db.snapshots.device_in_tenant(ctx.company_id, p.device_id):
         return ActionCheck(allowed=False, reasons=[f"Device {p.device_id} is not in {ctx.company_id}."])
-    rows = [r for r in ctx.db.compliance(ctx.company_id, check_id=p.check_id, status="fail")
+    rows = [r for r in ctx.db.compliance.query(ctx.company_id, check_id=p.check_id, status="fail")
             if r["device_id"] == p.device_id]
     if not rows:
         return ActionCheck(
@@ -129,16 +129,16 @@ class ReplacementParams(BaseModel):
 
 
 def _validate_replacement(ctx: SessionContext, p: ReplacementParams) -> ActionCheck:
-    if not ctx.db.device_in_tenant(ctx.company_id, p.device_id):
+    if not ctx.db.snapshots.device_in_tenant(ctx.company_id, p.device_id):
         return ActionCheck(allowed=False, reasons=[f"Device {p.device_id} is not in {ctx.company_id}."])
     evidence: list[EvidenceRow] = []
-    batt = [r for r in ctx.db.devices_by_battery(ctx.company_id, ctx.settings.battery_eol_cycles,
+    batt = [r for r in ctx.db.snapshots.by_battery(ctx.company_id, ctx.settings.battery_eol_cycles,
             ctx.settings.battery_service_conditions) if r["device_id"] == p.device_id]
     evidence += _ev(batt, "find_devices_by_battery", ("max_cycle_count", "battery_condition"))
-    disk = [r for r in ctx.db.devices_by_disk(ctx.company_id, ctx.settings.disk_low_free_pct, "mean")
+    disk = [r for r in ctx.db.snapshots.by_disk(ctx.company_id, ctx.settings.disk_low_free_pct, "mean")
             if r["device_id"] == p.device_id]
     evidence += _ev(disk, "find_devices_by_disk", ("value", "min_free_pct"))
-    ram = [r for r in ctx.db.devices_by_memory(ctx.company_id, ctx.settings.ram_high_used_pct)
+    ram = [r for r in ctx.db.snapshots.by_memory(ctx.company_id, ctx.settings.ram_high_used_pct)
            if r["device_id"] == p.device_id]
     evidence += _ev(ram, "find_devices_by_memory", ("value", "max_used_pct"))
     if not evidence:
@@ -174,7 +174,7 @@ class NotifyParams(BaseModel):
 
 
 def _validate_notify(ctx: SessionContext, p: NotifyParams) -> ActionCheck:
-    if not ctx.db.employee_in_tenant(ctx.company_id, p.employee_id):
+    if not ctx.db.snapshots.employee_in_tenant(ctx.company_id, p.employee_id):
         return ActionCheck(
             allowed=False, reasons=[f"Employee {p.employee_id} is not in {ctx.company_id}."]
         )

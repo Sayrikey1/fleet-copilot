@@ -10,7 +10,7 @@ from fleet_copilot.runner import run_turn
 def _audited_tools(ctx, decision: str | None = None) -> list[str]:
     return [
         r["tool"]
-        for r in ctx.db.audit_entries(ctx.company_id)
+        for r in ctx.db.audit.entries(ctx.company_id)
         if decision is None or r["decision"] == decision
     ]
 

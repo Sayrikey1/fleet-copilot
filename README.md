@@ -151,7 +151,7 @@ Because the numbers come from SQL (not the model), answers are reproducible and 
 All enforced in code at the tool/data layer — not via prompt instructions.
 
 - **Tenant isolation.** Every data-access method requires `company_id` as a mandatory
-  argument ([`db.py`](src/fleet_copilot/db.py)); the tenant is injected from the session
+  argument ([`data/repositories.py`](src/fleet_copilot/data/repositories.py)); the tenant is injected from the session
   principal ([`context.py`](src/fleet_copilot/context.py)), never from the model. A
   cross-tenant action is refused before it reaches the approval gate.
   *(This is a deliberate fix for a real pattern seen in prior work, where an optional
@@ -212,7 +212,8 @@ data subtleties handled explicitly: **battery is dropped per-snapshot** (100 sna
 it — never treated as 0), and OS version comparisons are family-scoped.
 
 Schema: `snapshots` (flattened scalars + `raw_json`), `compliance_results`,
-`installed_software`, `audit_log` — see [`ingest.py`](src/fleet_copilot/ingest.py).
+`installed_software`, `audit_log` — defined in [`data/queries.py`](src/fleet_copilot/data/queries.py),
+loaded by [`ingest.py`](src/fleet_copilot/ingest.py).
 
 ---
 
@@ -242,7 +243,10 @@ Schema: `snapshots` (flattened scalars + `raw_json`), `compliance_results`,
 src/fleet_copilot/
   settings.py     # one memoized config object; thresholds = single source of truth
   ingest.py       # NDJSON -> SQLite (idempotent)
-  db.py           # tenant-scoped query layer (company_id mandatory)
+  data/           # repository data layer (SQL isolated from logic)
+    queries.py        # all SQL text (schema, reads, inserts)
+    repositories.py   # Snapshot / Compliance / Software / Audit repositories
+    database.py       # Database unit of work (owns the connection, exposes repos)
   context.py      # SessionContext — the tenant principal
   registry.py     # @read_tool / @action_tool + import-time invariants
   tools/          # reads.py (grounding), actions.py (the 4 gated actions)

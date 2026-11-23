@@ -12,15 +12,15 @@ ACME_HEALTHY_DEVICE = "XSU9UUDGU6AC"  # acme device with no replacement signal
 
 
 def _decisions(ctx) -> list[str]:
-    return [r["decision"] for r in ctx.db.audit_entries(ctx.company_id)]
+    return [r["decision"] for r in ctx.db.audit.entries(ctx.company_id)]
 
 
 def test_read_tools_never_leak_other_tenants(make_ctx) -> None:
     ctx = make_ctx("acme-001")
-    disk = ctx.db.devices_by_disk("acme-001", 100.0, "mean")  # all acme devices
+    disk = ctx.db.snapshots.by_disk("acme-001", 100.0, "mean")  # all acme devices
     ids = {r["device_id"] for r in disk}
     assert GLOBEX_DEVICE not in ids
-    assert not ctx.db.device_in_tenant("acme-001", GLOBEX_DEVICE)
+    assert not ctx.db.snapshots.device_in_tenant("acme-001", GLOBEX_DEVICE)
 
 
 def test_cross_tenant_action_is_refused(make_ctx) -> None:

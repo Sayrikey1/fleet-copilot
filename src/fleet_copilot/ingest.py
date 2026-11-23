@@ -7,75 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-SCHEMA = """
-CREATE TABLE snapshots (
-    snapshot_id          INTEGER PRIMARY KEY,
-    device_id            TEXT NOT NULL,
-    company_id           TEXT NOT NULL,
-    employee_id          TEXT,
-    collected_at         TEXT NOT NULL,
-    agent_version        TEXT,
-    platform             TEXT,
-    product_name         TEXT,
-    os_version           TEXT,
-    os_major             INTEGER,
-    model_name           TEXT,
-    processor            TEXT,
-    total_memory_bytes   INTEGER,
-    used_memory_bytes    INTEGER,
-    ram_used_pct         REAL,
-    disk_size_bytes      INTEGER,
-    disk_available_bytes INTEGER,
-    disk_free_pct        REAL,
-    battery_present      INTEGER,       -- NULL = no battery block at all
-    battery_pct          INTEGER,
-    battery_cycle_count  INTEGER,
-    battery_condition    TEXT,
-    battery_full_charge  INTEGER,
-    has_network          INTEGER,
-    raw_json             TEXT NOT NULL
-);
-
-CREATE TABLE compliance_results (
-    snapshot_id   INTEGER NOT NULL REFERENCES snapshots(snapshot_id),
-    device_id     TEXT NOT NULL,
-    company_id    TEXT NOT NULL,
-    collected_at  TEXT NOT NULL,
-    check_id      TEXT NOT NULL,
-    status        TEXT NOT NULL,
-    severity      TEXT NOT NULL
-);
-
-CREATE TABLE installed_software (
-    snapshot_id   INTEGER NOT NULL REFERENCES snapshots(snapshot_id),
-    device_id     TEXT NOT NULL,
-    company_id    TEXT NOT NULL,
-    collected_at  TEXT NOT NULL,
-    name          TEXT NOT NULL,
-    version       TEXT,
-    publisher     TEXT
-);
-
-CREATE TABLE audit_log (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts           TEXT NOT NULL,
-    trace_id     TEXT,
-    company_id   TEXT NOT NULL,
-    actor        TEXT NOT NULL,
-    tool         TEXT NOT NULL,
-    params_json  TEXT NOT NULL,
-    decision     TEXT NOT NULL,         -- proposed | approved | executed | denied | refused
-    result_json  TEXT
-);
-
-CREATE INDEX idx_snap_company        ON snapshots(company_id);
-CREATE INDEX idx_snap_company_device ON snapshots(company_id, device_id);
-CREATE INDEX idx_snap_collected      ON snapshots(collected_at);
-CREATE INDEX idx_comp_company        ON compliance_results(company_id);
-CREATE INDEX idx_comp_check          ON compliance_results(check_id);
-CREATE INDEX idx_sw_company          ON installed_software(company_id);
-CREATE INDEX idx_audit_company       ON audit_log(company_id);
-"""
+from .data import queries as q
 
 
 def _os_major(version: str | None) -> int | None:
@@ -147,7 +79,7 @@ def ingest(dataset_path: Path, db_path: Path) -> dict[str, int]:
 
     conn = sqlite3.connect(db_path)
     try:
-        conn.executescript(SCHEMA)
+        conn.executescript(q.SCHEMA)
         snap_rows = 0
         comp_rows = 0
         sw_rows = 0
@@ -167,18 +99,11 @@ def ingest(dataset_path: Path, db_path: Path) -> dict[str, int]:
 
                 stamp = (snapshot_id, record["device_id"], record["company_id"], record["collected_at"])
                 for c in record.get("compliance_results") or []:
-                    conn.execute(
-                        "INSERT INTO compliance_results "
-                        "(snapshot_id, device_id, company_id, collected_at, check_id, status, severity) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (*stamp, c["check_id"], c["status"], c["severity"]),
-                    )
+                    conn.execute(q.INSERT_COMPLIANCE, (*stamp, c["check_id"], c["status"], c["severity"]))
                     comp_rows += 1
                 for s in record.get("installed_software") or []:
                     conn.execute(
-                        "INSERT INTO installed_software "
-                        "(snapshot_id, device_id, company_id, collected_at, name, version, publisher) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        q.INSERT_SOFTWARE,
                         (*stamp, s.get("name"), s.get("version"), s.get("publisher")),
                     )
                     sw_rows += 1
