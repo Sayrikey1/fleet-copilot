@@ -1,0 +1,75 @@
+[
+  {
+    "id": "acme_low_disk",
+    "question": "Which devices at Acme are low on disk space?",
+    "company": "acme-001",
+    "call": {"tool": "find_devices_by_disk", "args": {}},
+    "expect_devices": ["8NM23J95R5I6", "MT7PJB7N5LRE"]
+  },
+  {
+    "id": "globex_low_disk",
+    "question": "Which Globex devices are running out of storage?",
+    "company": "globex-002",
+    "call": {"tool": "find_devices_by_disk", "args": {}},
+    "expect_devices": ["E4V0SB5I0MYU", "JRZSGXVMKE6M"]
+  },
+  {
+    "id": "acme_high_sev_fail",
+    "question": "Show me devices failing high-severity compliance checks.",
+    "company": "acme-001",
+    "call": {"tool": "get_compliance", "args": {"severity": "high", "status": "fail"}},
+    "expect_devices": [],
+    "note": "The only high-severity check (disk_encryption) passes on every device; correct answer is none."
+  },
+  {
+    "id": "globex_high_sev_fail",
+    "question": "Any laptops failing high-severity checks at Globex?",
+    "company": "globex-002",
+    "call": {"tool": "get_compliance", "args": {"severity": "high", "status": "fail"}},
+    "expect_devices": []
+  },
+  {
+    "id": "acme_macos_old",
+    "question": "How many devices at Acme are running an OS older than macOS 15?",
+    "company": "acme-001",
+    "call": {"tool": "find_devices_by_os", "args": {"product_name": "macOS", "older_than_major": 15}},
+    "expect_count": 4,
+    "expect_devices": ["1LYSSFD074BB", "7VP16KHV88LM", "MT7PJB7N5LRE", "XSU9UUDGU6AC"]
+  },
+  {
+    "id": "initech_macos_old",
+    "question": "How many Initech machines run macOS older than 15?",
+    "company": "initech-003",
+    "call": {"tool": "find_devices_by_os", "args": {"product_name": "macOS", "older_than_major": 15}},
+    "expect_count": 4,
+    "expect_devices": ["DARFCP0BQM2G", "RLD7WV7J82SH", "SPKRRDF0L786", "XZYK11QTPWEC"]
+  },
+  {
+    "id": "acme_battery_eol",
+    "question": "Which Acme batteries are approaching end-of-life?",
+    "company": "acme-001",
+    "call": {"tool": "find_devices_by_battery", "args": {}},
+    "expect_devices": ["7VP16KHV88LM", "8NM23J95R5I6", "M4XVHUV1MEPZ"]
+  },
+  {
+    "id": "acme_ram",
+    "question": "Which Acme devices are consistently constrained by RAM?",
+    "company": "acme-001",
+    "call": {"tool": "find_devices_by_memory", "args": {}},
+    "expect_devices": ["M4XVHUV1MEPZ"]
+  },
+  {
+    "id": "acme_drift",
+    "question": "Which Acme devices have screen-lock compliance drift over time?",
+    "company": "acme-001",
+    "call": {"tool": "detect_compliance_drift", "args": {"check_id": "screen_lock"}},
+    "expect_devices": ["1LYSSFD074BB", "8NM23J95R5I6", "DLT35MHGTH2D", "DSYPSES7SKBB", "MT7PJB7N5LRE"]
+  },
+  {
+    "id": "globex_drift",
+    "question": "Any compliance drift on screen lock at Globex?",
+    "company": "globex-002",
+    "call": {"tool": "detect_compliance_drift", "args": {"check_id": "screen_lock"}},
+    "expect_devices": ["CUXW0BQSV1B7", "JRZSGXVMKE6M"]
+  }
+]

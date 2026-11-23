@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+
+# Secrets
+.env
+
+# Generated runtime artifacts (rebuilt by `fleet-copilot seed` / runs)
+fleet.db
+audit_log.jsonl

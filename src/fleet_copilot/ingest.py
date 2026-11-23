@@ -1,0 +1,197 @@
+"""Load the NDJSON telemetry into a local SQLite database.
+
+Design choice: the LLM plans and narrates; **SQL computes.** Flattening the nested
+telemetry into indexed, tenant-stamped tables gives us three things in one move —
+deterministic answers, reproducibility, and citable evidence (every row keeps its
+``snapshot_id`` + ``collected_at``). ``company_id``/``device_id``/``collected_at`` are
+denormalized onto every child row so tenant filtering needs no join.
+
+Ingest is idempotent: it drops and recreates the schema each run.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+SCHEMA = """
+CREATE TABLE snapshots (
+    snapshot_id          INTEGER PRIMARY KEY,
+    device_id            TEXT NOT NULL,
+    company_id           TEXT NOT NULL,
+    employee_id          TEXT,
+    collected_at         TEXT NOT NULL,
+    agent_version        TEXT,
+    platform             TEXT,          -- 'darwin' | 'win32'
+    product_name         TEXT,          -- 'macOS' | 'Windows'
+    os_version           TEXT,          -- e.g. '14.5'
+    os_major             INTEGER,       -- parsed leading integer of os_version
+    model_name           TEXT,
+    processor            TEXT,
+    total_memory_bytes   INTEGER,
+    used_memory_bytes    INTEGER,
+    ram_used_pct         REAL,          -- NULL when memory block absent
+    disk_size_bytes      INTEGER,       -- root ('/') volume, else first volume
+    disk_available_bytes INTEGER,
+    disk_free_pct        REAL,          -- NULL when no disk volume
+    battery_present      INTEGER,       -- 1/0/NULL (NULL = no battery block at all)
+    battery_pct          INTEGER,
+    battery_cycle_count  INTEGER,
+    battery_condition    TEXT,
+    battery_full_charge  INTEGER,
+    has_network          INTEGER,       -- 1/0
+    raw_json             TEXT NOT NULL  -- full original record, for fidelity/citation
+);
+
+CREATE TABLE compliance_results (
+    snapshot_id   INTEGER NOT NULL REFERENCES snapshots(snapshot_id),
+    device_id     TEXT NOT NULL,
+    company_id    TEXT NOT NULL,
+    collected_at  TEXT NOT NULL,
+    check_id      TEXT NOT NULL,
+    status        TEXT NOT NULL,        -- 'pass' | 'fail'
+    severity      TEXT NOT NULL         -- 'high' | 'medium' | 'low'
+);
+
+CREATE TABLE installed_software (
+    snapshot_id   INTEGER NOT NULL REFERENCES snapshots(snapshot_id),
+    device_id     TEXT NOT NULL,
+    company_id    TEXT NOT NULL,
+    collected_at  TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    version       TEXT,
+    publisher     TEXT
+);
+
+CREATE TABLE audit_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           TEXT NOT NULL,
+    trace_id     TEXT,
+    company_id   TEXT NOT NULL,
+    actor        TEXT NOT NULL,
+    tool         TEXT NOT NULL,
+    params_json  TEXT NOT NULL,
+    decision     TEXT NOT NULL,         -- proposed | approved | executed | denied | refused
+    result_json  TEXT
+);
+
+CREATE INDEX idx_snap_company        ON snapshots(company_id);
+CREATE INDEX idx_snap_company_device ON snapshots(company_id, device_id);
+CREATE INDEX idx_snap_collected      ON snapshots(collected_at);
+CREATE INDEX idx_comp_company        ON compliance_results(company_id);
+CREATE INDEX idx_comp_check          ON compliance_results(check_id);
+CREATE INDEX idx_sw_company          ON installed_software(company_id);
+CREATE INDEX idx_audit_company       ON audit_log(company_id);
+"""
+
+
+def _os_major(version: str | None) -> int | None:
+    if not version:
+        return None
+    head = version.split(".", 1)[0].strip()
+    return int(head) if head.isdigit() else None
+
+
+def _root_volume(volumes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not volumes:
+        return None
+    for v in volumes:
+        if v.get("mount_point") == "/":
+            return v
+    return volumes[0]
+
+
+def _flatten(record: dict[str, Any]) -> dict[str, Any]:
+    os_ = record.get("os") or {}
+    ident = record.get("device_identity") or {}
+    mem = record.get("memory") or {}
+    battery = record.get("battery")  # may be absent entirely
+    volumes = record.get("disk_volumes") or []
+    root = _root_volume(volumes)
+
+    total_mem = mem.get("total_memory_bytes") or mem.get("ram_bytes")
+    used_mem = mem.get("used_memory_bytes")
+    ram_used_pct = (100.0 * used_mem / total_mem) if (total_mem and used_mem is not None) else None
+
+    disk_size = root.get("size_bytes") if root else None
+    disk_avail = root.get("available_bytes") if root else None
+    disk_free_pct = (100.0 * disk_avail / disk_size) if (disk_size and disk_avail is not None) else None
+
+    os_version = os_.get("product_version")
+
+    return {
+        "device_id": record["device_id"],
+        "company_id": record["company_id"],
+        "employee_id": record.get("employee_id"),
+        "collected_at": record["collected_at"],
+        "agent_version": record.get("agent_version"),
+        "platform": os_.get("platform"),
+        "product_name": os_.get("product_name"),
+        "os_version": os_version,
+        "os_major": _os_major(os_version),
+        "model_name": ident.get("model_name"),
+        "processor": ident.get("processor"),
+        "total_memory_bytes": total_mem,
+        "used_memory_bytes": used_mem,
+        "ram_used_pct": ram_used_pct,
+        "disk_size_bytes": disk_size,
+        "disk_available_bytes": disk_avail,
+        "disk_free_pct": disk_free_pct,
+        "battery_present": None if battery is None else int(bool(battery.get("battery_present", True))),
+        "battery_pct": battery.get("percentage") if battery else None,
+        "battery_cycle_count": battery.get("cycle_count") if battery else None,
+        "battery_condition": battery.get("condition") if battery else None,
+        "battery_full_charge": battery.get("full_charge_capacity") if battery else None,
+        "has_network": 1 if record.get("network") else 0,
+        "raw_json": json.dumps(record, separators=(",", ":")),
+    }
+
+
+def ingest(dataset_path: Path, db_path: Path) -> dict[str, int]:
+    """(Re)build the SQLite database from the NDJSON file. Returns row counts."""
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(SCHEMA)
+        snap_rows = 0
+        comp_rows = 0
+        sw_rows = 0
+
+        with open(dataset_path, encoding="utf-8") as fh:
+            for snapshot_id, line in enumerate(fh, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                flat = _flatten(record)
+                flat["snapshot_id"] = snapshot_id
+                cols = ", ".join(flat.keys())
+                placeholders = ", ".join(f":{k}" for k in flat)
+                conn.execute(f"INSERT INTO snapshots ({cols}) VALUES ({placeholders})", flat)
+                snap_rows += 1
+
+                stamp = (snapshot_id, record["device_id"], record["company_id"], record["collected_at"])
+                for c in record.get("compliance_results") or []:
+                    conn.execute(
+                        "INSERT INTO compliance_results "
+                        "(snapshot_id, device_id, company_id, collected_at, check_id, status, severity) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (*stamp, c["check_id"], c["status"], c["severity"]),
+                    )
+                    comp_rows += 1
+                for s in record.get("installed_software") or []:
+                    conn.execute(
+                        "INSERT INTO installed_software "
+                        "(snapshot_id, device_id, company_id, collected_at, name, version, publisher) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (*stamp, s.get("name"), s.get("version"), s.get("publisher")),
+                    )
+                    sw_rows += 1
+        conn.commit()
+        return {"snapshots": snap_rows, "compliance_results": comp_rows, "installed_software": sw_rows}
+    finally:
+        conn.close()

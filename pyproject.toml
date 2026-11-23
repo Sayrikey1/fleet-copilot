@@ -1,0 +1,56 @@
+[project]
+name = "fleet-copilot"
+version = "0.1.0"
+description = "Agentic AI Fleet Copilot over device telemetry — grounded QA, insights, and gated operational actions."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3.30",
+    "langchain-anthropic>=0.3.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "typer>=0.15",
+    "rich>=13.9",
+]
+
+[project.scripts]
+fleet-copilot = "fleet_copilot.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fleet_copilot"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+markers = [
+    "live: tests that call the real Anthropic API (needs ANTHROPIC_API_KEY); skipped by default",
+]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["fleet_copilot"]
+mypy_path = "src"
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
