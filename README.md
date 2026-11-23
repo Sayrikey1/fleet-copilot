@@ -48,6 +48,10 @@ just ask "Show me devices failing high-severity compliance checks." acme-001
 
 ## Agent architecture
 
+> For the full design narrative — system overview, the agent graph, a step-by-step anatomy of
+> a request (with sequence diagrams), and the technology trade-offs — see
+> **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
 A simple prompt wrapper would fail this task, so the orchestration is an explicit,
 inspectable **LangGraph `StateGraph`** — the control flow (planning, the tool loop, the
 approval pause, the grounding check) is deterministic code; only the reasoning inside each
