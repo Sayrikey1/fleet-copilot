@@ -1,14 +1,6 @@
-"""The explicit agent graph (LangGraph ``StateGraph``).
-
-    START → plan → agent ⇄ tools → verify → respond → END
-                               ↘ approval_gate ↗
-                                 (interrupt for human approval)
-
-Why a graph and not ReAct-in-a-prompt: the control flow — planning, the tool loop, the
-human-approval pause, and the grounding check — is *deterministic and inspectable*, not
-left to the model. ``ctx`` (the tenant principal + db) and the model are captured in node
-closures, so they never enter the checkpointed state (which stays JSON-friendly).
-"""
+"""The explicit agent graph: plan → agent ⇄ tools → verify → respond, with an
+approval_gate (interrupt) for actions. ctx + model live in closures, not in state.
+See docs/ARCHITECTURE.md for the full diagram."""
 
 from __future__ import annotations
 
@@ -22,7 +14,7 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from . import audit
-from . import tools as _tools  # noqa: F401  (import registers all tools)
+from . import tools as _tools  # noqa: F401  (registers tools)
 from .context import SessionContext
 from .grounding import ProposedAction, unsupported_device_ids
 from .llm import ChatModel
@@ -56,7 +48,6 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
     """Compile a fresh graph bound to one session (tenant) and one model."""
     tool_schemas = REGISTRY.tool_schemas()
 
-    # ---- nodes --------------------------------------------------------- #
     def plan_node(state: FleetState) -> dict[str, Any]:
         question = state["question"]
         plan_text = ""
@@ -65,7 +56,7 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
                 [SystemMessage(build_planner_prompt(ctx.company_id)), HumanMessage(question)]
             )
             plan_text = (resp.content if isinstance(resp.content, str) else str(resp.content)).strip()
-        except Exception:  # planning is best-effort; the agent can proceed without it
+        except Exception:  # planning is best-effort
             plan_text = ""
         messages: list[Any] = [
             SystemMessage(build_agent_prompt(ctx.company_id, plan_text)),
@@ -119,7 +110,7 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
                                             tool_call_id=call_id))
             elif isinstance(spec, ActionSpec):
                 if pending is not None:
-                    # another action is already held this round; defer (but still answer the call)
+                    # one action held per round; defer the rest (but still answer the call)
                     messages.append(ToolMessage(
                         content=json.dumps({"deferred": True,
                                             "reason": "another action is awaiting approval"}),
@@ -137,7 +128,7 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
                             "preview": outcome.preview,
                             "requires_approval": True,
                         }), tool_call_id=call_id))
-                else:  # ActionCheck -> refused (tenant/evidence guardrail)
+                else:  # refused by a guardrail
                     reason = "; ".join(outcome.reasons)
                     refusals.append(reason)
                     audit.record(ctx, tool=name, params=args, decision=audit.REFUSED,
@@ -151,7 +142,7 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
     def approval_gate_node(state: FleetState) -> dict[str, Any]:
         proposal = state["pending_approval"]
         assert proposal is not None
-        # Pause the graph for a human decision. On resume, `decision` holds the resume value.
+        # interrupt() pauses here; on resume `decision` is the resume value.
         decision = interrupt({
             "type": "approval_request",
             "tool": proposal["tool"],
@@ -193,7 +184,6 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
         answer = (ai.content if ai and isinstance(ai.content, str) else "") or ""
         return {"answer": answer, "verified": not state.get("unsupported_ids")}
 
-    # ---- edges --------------------------------------------------------- #
     def route_after_agent(state: FleetState) -> str:
         ai = _last_ai(state["messages"])
         if ai is not None and ai.tool_calls and state.get("round", 0) <= ctx.settings.max_tool_rounds:
@@ -204,7 +194,6 @@ def build_graph(ctx: SessionContext, model: ChatModel) -> Any:
         return "approval_gate" if state.get("pending_approval") else "agent"
 
     def route_after_verify(state: FleetState) -> str:
-        # one correction loop if the draft answer cites unsupported device ids
         if state.get("unsupported_ids") and not state.get("verified_once"):
             return "correct"
         return "respond"

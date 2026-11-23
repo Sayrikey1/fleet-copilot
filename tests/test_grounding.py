@@ -23,13 +23,10 @@ def test_graph_corrects_a_hallucinated_id(make_ctx) -> None:
     model = ScriptedModel([
         ai_text("Plan: query disk."),
         ai_tool_call("find_devices_by_disk", {}),
-        # first answer cites a device that is NOT in evidence -> must be corrected
-        ai_text("Low: [8NM23J95R5I6 @ t] and [AAAAAAAAAAAA @ t]."),
-        # corrected answer, grounded only in evidence
-        ai_text("Low: [8NM23J95R5I6 @ t] and [MT7PJB7N5LRE @ t]."),
+        ai_text("Low: [8NM23J95R5I6 @ t] and [AAAAAAAAAAAA @ t]."),  # cites a non-evidence id
+        ai_text("Low: [8NM23J95R5I6 @ t] and [MT7PJB7N5LRE @ t]."),  # corrected
     ])
     state = run_turn(ctx, model, "Which devices are low on disk?")
     assert "AAAAAAAAAAAA" not in state["answer"]
     assert state.get("verified") is True
-    # the correction path was taken (4 model calls: plan, tool, bad, corrected)
-    assert len(model.calls) == 4
+    assert len(model.calls) == 4  # plan, tool, bad, corrected

@@ -1,9 +1,4 @@
-"""System prompts — composed string constants (pattern from both reference codebases).
-
-The rules encode the behaviours the rubric rewards: ground every claim in tool output,
-cite evidence, never invent device ids, and for any state-changing request call the
-action tool (the platform owns approval) rather than claiming it was done.
-"""
+"""System prompts (composed string constants)."""
 
 from __future__ import annotations
 

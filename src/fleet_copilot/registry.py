@@ -1,14 +1,5 @@
-"""Tool registry — decorator-registered, read/write-typed, with import-time invariants.
-
-Combines the two patterns worth copying from the reference codebases:
-
-* **Afefe-AI** — a decorator registry that splits read (``INFO``) from write (``ACTION``)
-  tools, where actions declare a risk and are gated behind confirmation.
-* **SpinStrip-AI** — invariants enforced *at registration* (import time), so a
-  mis-declared tool fails fast rather than at first call. Here: **an action tool must
-  declare ``requires_approval=True``** (there is no such thing as a silent write), and
-  read and action names share one namespace that cannot collide.
-"""
+"""Decorator tool registry, read/write-typed. Import-time invariants: an action tool must
+declare requires_approval=True (no silent writes) and names cannot collide."""
 
 from __future__ import annotations
 
@@ -49,7 +40,7 @@ class ActionSpec:
     kind: Literal["action"] = "action"
 
     def propose(self, ctx: SessionContext, params: BaseModel) -> ProposedAction | ActionCheck:
-        """Run pre-flight validation and, if allowed, build the held proposal."""
+        """Validate; if allowed, build the held proposal, else return the failing check."""
         check = self.validator(ctx, params)
         if not check.allowed:
             return check
@@ -76,11 +67,7 @@ class _Registry:
         return {**self.reads, **self.actions}
 
     def tool_schemas(self) -> list[dict[str, Any]]:
-        """OpenAI/Anthropic-style function schemas for ``bind_tools``.
-
-        The description is suffixed with ``[read]`` / ``[action, requires approval]`` so
-        the model knows, from the schema alone, which calls are state-changing.
-        """
+        """Anthropic-style function schemas for bind_tools, tagged read / action."""
         schemas: list[dict[str, Any]] = []
         for spec in self.all_specs().values():
             tag = "read" if spec.kind == "read" else "action, requires approval"
@@ -100,7 +87,7 @@ REGISTRY = _Registry()
 def read_tool(
     *, name: str, description: str, input_model: type[BaseModel]
 ) -> Callable[[ReadHandler], ReadSpec]:
-    """Register a read-only (grounding) tool. Executes immediately when called."""
+    """Register a read-only (grounding) tool."""
 
     def decorate(handler: ReadHandler) -> ReadSpec:
         REGISTRY._guard_name(name)
@@ -120,12 +107,7 @@ def action_tool(
     risk: str = "normal",
     requires_approval: bool = True,
 ) -> Callable[[ActionExecutor], ActionSpec]:
-    """Register a state-changing action tool. Held for human approval, never auto-run.
-
-    Import-time invariants (fail fast):
-      * ``requires_approval`` must be True — a write cannot be silent.
-      * ``risk`` must be a known level.
-    """
+    """Register a state-changing action tool (held for approval). Fails fast on bad declaration."""
     if not requires_approval:
         raise ValueError(f"action tool {name!r} must set requires_approval=True (no silent writes)")
     if risk not in RISK_LEVELS:

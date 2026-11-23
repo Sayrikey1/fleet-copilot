@@ -1,8 +1,4 @@
-"""Tier-1 eval: the read tools return the exact, hand-verified device sets per tenant.
-
-Pure and deterministic — no LLM. This locks grounding *correctness* independently of the
-model, so a model regression can never hide a wrong answer here.
-"""
+"""Tier-1 eval: read tools return the exact hand-verified device sets per tenant (no LLM)."""
 
 from __future__ import annotations
 
@@ -35,7 +31,7 @@ def test_golden_answer(make_ctx, g: dict) -> None:
 
 
 def test_high_severity_failures_are_zero_everywhere(make_ctx) -> None:
-    # The signature trap: the only high-severity check (disk_encryption) never fails.
+    # the trap: the only high-severity check (disk_encryption) never fails
     for company in ("acme-001", "globex-002", "initech-003"):
         ctx = make_ctx(company)
         result = _run(ctx, {"tool": "get_compliance", "args": {"severity": "high", "status": "fail"}})
@@ -43,7 +39,7 @@ def test_high_severity_failures_are_zero_everywhere(make_ctx) -> None:
 
 
 def test_macos_floor_is_os_family_scoped(make_ctx) -> None:
-    # Windows devices must never match an "older than macOS 15" query.
+    # Windows must never match an "older than macOS 15" query
     ctx = make_ctx("acme-001")
     result = _run(ctx, {"tool": "find_devices_by_os",
                         "args": {"product_name": "macOS", "older_than_major": 15}})
@@ -52,9 +48,8 @@ def test_macos_floor_is_os_family_scoped(make_ctx) -> None:
 
 
 def test_battery_excludes_devices_without_battery(make_ctx) -> None:
-    # Devices with no battery block (e.g. desktops) must never appear in a battery query.
+    # battery-less devices must never appear in a battery query
     ctx = make_ctx("acme-001")
     result = _run(ctx, {"tool": "find_devices_by_battery", "args": {}})
-    # every returned device has a real cycle_count in its detail
     for e in result.evidence:
         assert e.detail.get("max_cycle_count") is not None

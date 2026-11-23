@@ -1,10 +1,6 @@
 """Grounding primitives: evidence, read/action results, and the citation verifier.
-
-Grounding strategy in one line: **the agent may only assert what the tools returned.**
-Read tools attach :class:`EvidenceRow`s (each carrying a snapshot id + timestamp);
-the verifier then rejects any device id mentioned in the final answer that is not
-present in the gathered evidence. This catches hallucinated device ids directly.
-"""
+The agent may only assert what the tools returned; the verifier rejects any device id
+in the answer that no evidence supports."""
 
 from __future__ import annotations
 
@@ -13,12 +9,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-# A device id in this dataset is a 12-char uppercase alphanumeric serial.
-DEVICE_ID_RE = re.compile(r"\b[A-Z0-9]{12}\b")
+DEVICE_ID_RE = re.compile(r"\b[A-Z0-9]{12}\b")  # 12-char serial
 
 
 class EvidenceRow(BaseModel):
-    """One citable fact: which device, from which snapshot, and the salient values."""
+    """One citable fact: device, snapshot, salient values."""
 
     device_id: str
     snapshot_id: int | None = None
@@ -32,15 +27,13 @@ class EvidenceRow(BaseModel):
 
 
 class ReadResult(BaseModel):
-    """What a read tool hands back: a short summary, the evidence, and raw data."""
-
     summary: str
     evidence: list[EvidenceRow] = Field(default_factory=list)
     data: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionCheck(BaseModel):
-    """The verdict of an action tool's pre-flight validation (tenant + evidence)."""
+    """Verdict of an action's pre-flight validation (tenant + evidence)."""
 
     allowed: bool
     reasons: list[str] = Field(default_factory=list)
@@ -49,7 +42,7 @@ class ActionCheck(BaseModel):
 
 
 class ProposedAction(BaseModel):
-    """A state-changing action the agent wants to take — held for human approval."""
+    """A state-changing action, held for human approval."""
 
     tool: str
     params: dict[str, Any]
@@ -64,11 +57,7 @@ def evidence_device_ids(evidence: list[EvidenceRow]) -> set[str]:
 
 
 def unsupported_device_ids(answer: str, evidence: list[EvidenceRow]) -> list[str]:
-    """Device ids named in ``answer`` that no gathered evidence supports.
-
-    A non-empty result means the answer referenced a device the tools never
-    returned for this tenant — i.e. a hallucination or a tenant leak.
-    """
+    """Device ids in answer that no evidence supports (hallucination / tenant leak)."""
     mentioned = set(DEVICE_ID_RE.findall(answer))
     grounded = evidence_device_ids(evidence)
     return sorted(mentioned - grounded)

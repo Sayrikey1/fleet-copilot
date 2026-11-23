@@ -1,8 +1,4 @@
-"""Tier-2 eval: the graph calls the right tools and grounds its answer.
-
-Drives the real LangGraph graph with a scripted model, so we assert the *trajectory*
-(which tool ran) and grounding — not fuzzy prose.
-"""
+"""Tier-2 eval: the graph (scripted model) calls the right tool and grounds its answer."""
 
 from __future__ import annotations
 
@@ -31,7 +27,6 @@ def test_disk_question_calls_disk_tool_and_grounds(make_ctx) -> None:
     assert "find_devices_by_disk" in _audited_tools(ctx, audit.READ)
     assert state["evidence"], "expected grounding evidence to be gathered"
     assert "low on disk" in state["answer"]
-    # the scripted model was given the tool schemas
     assert model.bound_tools and any(t["name"] == "find_devices_by_disk" for t in model.bound_tools)
 
 
@@ -44,8 +39,7 @@ def test_compliance_question_calls_compliance_tool(make_ctx) -> None:
     ])
     state = run_turn(ctx, model, "Any high-severity compliance failures?")
     assert "get_compliance" in _audited_tools(ctx, audit.READ)
-    # correct grounded conclusion: nothing matched, so no device ids are cited
-    assert state["evidence"] == []
+    assert state["evidence"] == []  # nothing matched => nothing cited
     assert "No devices" in state["answer"]
 
 

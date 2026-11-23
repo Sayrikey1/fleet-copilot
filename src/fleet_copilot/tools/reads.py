@@ -1,9 +1,5 @@
-"""Read (grounding) tools. Each is tenant-scoped via ``ctx`` and returns evidence.
-
-Parameters never include ``company_id`` — the tenant is injected from the session.
-Every returned :class:`EvidenceRow` carries a snapshot id + timestamp so the agent
-can cite the source of each claim.
-"""
+"""Read (grounding) tools, tenant-scoped via ctx. Params never include company_id; each
+returns EvidenceRows carrying a snapshot id + timestamp for citation."""
 
 from __future__ import annotations
 
@@ -32,9 +28,7 @@ def _evidence(rows: list[dict[str, Any]], source: str, keep: tuple[str, ...]) ->
     return out
 
 
-# --------------------------------------------------------------------------- #
 # Fleet overview
-# --------------------------------------------------------------------------- #
 class EmptyParams(BaseModel):
     pass
 
@@ -59,9 +53,7 @@ def get_fleet_summary(ctx: SessionContext, params: EmptyParams) -> ReadResult:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Disk
-# --------------------------------------------------------------------------- #
 class DiskParams(BaseModel):
     max_free_pct: float | None = Field(
         default=None, description="Free-space %% at or below which a device counts as low. "
@@ -90,9 +82,7 @@ def find_devices_by_disk(ctx: SessionContext, params: DiskParams) -> ReadResult:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Memory
-# --------------------------------------------------------------------------- #
 class MemoryParams(BaseModel):
     min_used_pct: float | None = Field(
         default=None, description="Mean RAM-used %% at or above which a device is 'constrained'. "
@@ -115,9 +105,7 @@ def find_devices_by_memory(ctx: SessionContext, params: MemoryParams) -> ReadRes
     )
 
 
-# --------------------------------------------------------------------------- #
 # Battery
-# --------------------------------------------------------------------------- #
 class BatteryParams(BaseModel):
     min_cycle_count: int | None = Field(
         default=None, description="Peak charge-cycle count at or above which a battery is near "
@@ -146,9 +134,7 @@ def find_devices_by_battery(ctx: SessionContext, params: BatteryParams) -> ReadR
     )
 
 
-# --------------------------------------------------------------------------- #
 # OS version
-# --------------------------------------------------------------------------- #
 class OsParams(BaseModel):
     product_name: str = Field(
         default="macOS", description="OS family, e.g. 'macOS' or 'Windows'. Required so the query "
@@ -177,9 +163,7 @@ def find_devices_by_os(ctx: SessionContext, params: OsParams) -> ReadResult:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Compliance
-# --------------------------------------------------------------------------- #
 class ComplianceParams(BaseModel):
     check_id: str | None = Field(
         default=None, description="e.g. 'disk_encryption', 'screen_lock', 'os_up_to_date'."
@@ -235,9 +219,7 @@ def detect_compliance_drift(ctx: SessionContext, params: DriftParams) -> ReadRes
     )
 
 
-# --------------------------------------------------------------------------- #
 # Device time-series + software
-# --------------------------------------------------------------------------- #
 class HistoryParams(BaseModel):
     device_id: str = Field(description="The device to trace.")
     metric: Literal["disk_free_pct", "ram_used_pct", "battery_cycle_count", "battery_pct"] = Field(
@@ -272,7 +254,7 @@ def get_device_history(ctx: SessionContext, params: HistoryParams) -> ReadResult
     series = [{"collected_at": r["collected_at"], "value": r["value"]} for r in rows]
     return ReadResult(
         summary=f"{len(rows)} readings of {params.metric} for {params.device_id}.",
-        evidence=ev[:1] + ev[-1:],  # cite first + last reading for trend claims
+        evidence=ev[:1] + ev[-1:],  # first + last reading
         data={"device_id": params.device_id, "metric": params.metric, "series": series},
     )
 

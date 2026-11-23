@@ -1,8 +1,4 @@
-"""Shared fixtures: a seeded SQLite db (built once) and tenant-scoped contexts.
-
-Everything here is deterministic and offline — no LLM, no network. The db is built from
-the real dataset so the golden assertions test the true numbers.
-"""
+"""Shared fixtures: a seeded db (from the real dataset) and tenant-scoped contexts."""
 
 from __future__ import annotations
 
@@ -21,7 +17,7 @@ GOLDEN_QA = json.loads((Path(__file__).parent / "golden" / "golden_qa.json").rea
 
 @pytest.fixture
 def seeded_db(tmp_path: Path) -> Path:
-    # Function-scoped so each test (and its audit_log) is fully isolated; ingest is fast.
+    # function-scoped so each test's audit_log is isolated
     db_path = tmp_path / "fleet.db"
     ingest(DATASET, db_path)
     return db_path

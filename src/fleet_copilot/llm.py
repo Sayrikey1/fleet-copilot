@@ -1,10 +1,5 @@
-"""Chat-model factory and the minimal interface the graph depends on.
-
-The graph only needs an object that can ``bind_tools(schemas)`` and ``invoke(messages)``
-returning a LangChain ``AIMessage``. Real runs use ``ChatAnthropic``; the deterministic
-test suite injects a scripted fake with the same two methods — so the graph is exercised
-end to end with no network and no API key.
-"""
+"""Chat-model factory + the minimal interface the graph needs (bind_tools + invoke).
+Real runs use ChatAnthropic; tests inject a scripted fake with the same two methods."""
 
 from __future__ import annotations
 
@@ -20,12 +15,7 @@ class ChatModel(Protocol):
 
 
 def build_model(settings: Any) -> Any:
-    """Construct a ChatAnthropic bound to the configured model (temperature 0 by default).
-
-    Returns an object satisfying :class:`ChatModel` (``bind_tools`` + ``invoke``). Imported
-    lazily so the package works without ``langchain_anthropic`` installed when only the
-    deterministic (fake-model) paths are used.
-    """
+    """ChatAnthropic for the configured model (langchain_anthropic imported lazily)."""
     if not settings.has_anthropic_key:
         raise RuntimeError(
             "No ANTHROPIC_API_KEY configured. Set it in .env to run the live agent, "
@@ -39,8 +29,7 @@ def build_model(settings: Any) -> Any:
         "stop": None,
         "api_key": settings.anthropic_api_key,
     }
-    # Some Claude models (reasoning models) only accept their default temperature,
-    # so only pass it when explicitly configured.
+    # Reasoning models reject non-default temperature; only pass it when set.
     if settings.temperature is not None:
         kwargs["temperature"] = settings.temperature
     return ChatAnthropic(**kwargs)

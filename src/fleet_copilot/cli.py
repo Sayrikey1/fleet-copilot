@@ -1,9 +1,4 @@
-"""Fleet Copilot command-line interface.
-
-    fleet-copilot seed                                   # build the SQLite db from the NDJSON
-    fleet-copilot ask "..." --company acme-001           # ask a grounded question
-    fleet-copilot audit-log --company acme-001           # show the append-only audit trail
-"""
+"""Fleet Copilot CLI: seed / ask / demo / audit-log."""
 
 from __future__ import annotations
 

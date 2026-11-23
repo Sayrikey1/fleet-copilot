@@ -1,9 +1,4 @@
-"""Append-only audit trail for every tool call, proposal, approval and refusal.
-
-Writes to two places: the ``audit_log`` table (queryable, tenant-scoped) and a JSONL
-mirror on disk (tamper-evident, easy to ship to a SIEM). Nothing is ever updated or
-deleted — each event is a new row/line.
-"""
+"""Append-only audit trail (audit_log table + JSONL mirror) for every tool interaction."""
 
 from __future__ import annotations
 
@@ -14,7 +9,7 @@ from typing import Any
 
 from .context import SessionContext
 
-# decision vocabulary
+# decisions
 PROPOSED = "proposed"
 APPROVED = "approved"
 EXECUTED = "executed"
@@ -36,7 +31,6 @@ def record(
     result: dict[str, Any] | None = None,
     jsonl_path: Path | None = None,
 ) -> int:
-    """Append one audit event. Returns the audit row id."""
     ts = _now()
     params_json = json.dumps(params, sort_keys=True, default=str)
     result_json = json.dumps(result, sort_keys=True, default=str) if result is not None else None
@@ -71,5 +65,5 @@ def record(
                 + "\n"
             )
     except OSError:
-        pass  # the DB row is the source of truth; JSONL mirror is best-effort
+        pass  # JSONL mirror is best-effort; the DB row is authoritative
     return row_id

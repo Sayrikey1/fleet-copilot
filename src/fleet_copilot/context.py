@@ -1,10 +1,5 @@
-"""The per-session principal — the analogue of Afefe-AI's ``ExecutionContext``.
-
-One object threads the *authenticated* tenant, the database handle, and request
-identity into every tool. Crucially, ``company_id`` lives here, sourced from the
-session (CLI flag / API principal) — **never from the model's arguments.** Tools read
-``ctx.company_id``; they cannot be tricked into querying another tenant.
-"""
+"""Per-session principal: tenant + db handle, threaded into every tool. company_id is
+sourced here (never from the model), so tools cannot query another tenant."""
 
 from __future__ import annotations
 

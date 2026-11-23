@@ -1,7 +1,4 @@
-"""Guardrail eval: tenant isolation, human-approval gating, and evidence-gated actions.
-
-These are the 20%-weight behaviours, each asserted as a hard invariant of the graph.
-"""
+"""Guardrail eval: tenant isolation, approval gating, and evidence-gated actions."""
 
 from __future__ import annotations
 
@@ -18,11 +15,9 @@ def _decisions(ctx) -> list[str]:
     return [r["decision"] for r in ctx.db.audit_entries(ctx.company_id)]
 
 
-# --- tenant isolation ------------------------------------------------------ #
 def test_read_tools_never_leak_other_tenants(make_ctx) -> None:
     ctx = make_ctx("acme-001")
-    # a Globex device must not appear in any Acme-scoped query
-    disk = ctx.db.devices_by_disk("acme-001", 100.0, "mean")  # everything, max threshold
+    disk = ctx.db.devices_by_disk("acme-001", 100.0, "mean")  # all acme devices
     ids = {r["device_id"] for r in disk}
     assert GLOBEX_DEVICE not in ids
     assert not ctx.db.device_in_tenant("acme-001", GLOBEX_DEVICE)
@@ -45,7 +40,6 @@ def test_cross_tenant_action_is_refused(make_ctx) -> None:
     assert audit.EXECUTED not in _decisions(ctx)
 
 
-# --- human-approval gating ------------------------------------------------- #
 def test_action_is_held_for_approval_and_denied(make_ctx) -> None:
     ctx = make_ctx("acme-001")
     seen: list[dict] = []
@@ -80,7 +74,6 @@ def test_action_executes_only_after_approval(make_ctx) -> None:
     assert audit.APPROVED in decisions and audit.EXECUTED in decisions
 
 
-# --- evidence-gated actions ------------------------------------------------ #
 def test_flag_without_evidence_is_refused(make_ctx) -> None:
     ctx = make_ctx("acme-001")
     seen: list[dict] = []
@@ -99,7 +92,7 @@ def test_flag_without_evidence_is_refused(make_ctx) -> None:
 
 
 def test_remediation_requires_active_failure(make_ctx) -> None:
-    # open_remediation_ticket on a check the device is NOT failing must be refused.
+    # ticket on a check the device isn't failing must be refused
     ctx = make_ctx("acme-001")
     model = ScriptedModel([
         ai_text("Plan."),

@@ -1,15 +1,5 @@
-"""Tenant-scoped data access over the SQLite telemetry store.
-
-**Tenant isolation lives here, at the data layer — not in the prompt.** Every query
-method takes ``company_id`` as a mandatory first argument; there is no way to read a
-row without naming a tenant. This is the deliberate fix for the bug observed in the
-reference codebase, where an optional ``org_id`` defaulted to ``None`` and silently
-disabled every tenant filter. The agent supplies only *non-identifying* parameters;
-``company_id`` is injected from the authenticated session, never from the model.
-
-Every result row carries ``device_id`` + ``collected_at`` (+ ``snapshot_id``) so the
-agent can cite evidence for each claim.
-"""
+"""Tenant-scoped data access. Every query requires company_id (no way to read a row
+without naming a tenant); result rows carry device_id + collected_at + snapshot_id."""
 
 from __future__ import annotations
 
@@ -18,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Metrics exposed by get_device_history, mapped to their snapshot column.
 HISTORY_METRICS: dict[str, str] = {
     "disk_free_pct": "disk_free_pct",
     "ram_used_pct": "ram_used_pct",
@@ -41,8 +30,6 @@ def _rows(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
 
 @dataclass
 class FleetDB:
-    """A thin, tenant-aware query layer. Open with :meth:`connect`."""
-
     conn: sqlite3.Connection
 
     @classmethod
@@ -54,7 +41,6 @@ class FleetDB:
     def close(self) -> None:
         self.conn.close()
 
-    # --- tenant metadata ---------------------------------------------------
     def companies(self) -> list[str]:
         cur = self.conn.execute("SELECT DISTINCT company_id FROM snapshots ORDER BY company_id")
         return [r[0] for r in cur.fetchall()]
@@ -80,7 +66,6 @@ class FleetDB:
         )
         return cur.fetchone() is not None
 
-    # --- read queries (all tenant-scoped) ----------------------------------
     def fleet_summary(self, company_id: str) -> dict[str, Any]:
         cur = self.conn.execute(
             _LATEST_CTE
@@ -101,12 +86,7 @@ class FleetDB:
     def devices_by_disk(
         self, company_id: str, max_free_pct: float, mode: str = "mean"
     ) -> list[dict[str, Any]]:
-        """Devices whose root-volume free space is at/below ``max_free_pct``.
-
-        mode='mean' (default, stable): mean free% over the window.
-        mode='latest': the most recent snapshot's free%.
-        mode='sustained': every snapshot below threshold (max free% <= threshold).
-        """
+        """Root-volume free% at/below max_free_pct. mode: mean | latest | sustained(max)."""
         agg = {"mean": "AVG(disk_free_pct)", "sustained": "MAX(disk_free_pct)"}.get(mode)
         if mode == "latest":
             cur = self.conn.execute(
@@ -138,7 +118,7 @@ class FleetDB:
         return _rows(cur)
 
     def devices_by_memory(self, company_id: str, min_used_pct: float) -> list[dict[str, Any]]:
-        """Devices whose mean RAM-used% over the window is at/above ``min_used_pct``."""
+        """Devices whose mean RAM-used% is at/above min_used_pct."""
         cur = self.conn.execute(
             """
             SELECT device_id, AVG(ram_used_pct) AS value, MAX(ram_used_pct) AS max_used_pct,
@@ -159,10 +139,8 @@ class FleetDB:
         min_cycle_count: int | None = None,
         conditions: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
-        """Battery-health query. Devices with no battery block at all are naturally
-        excluded (they have no non-null rows). A device qualifies if its peak
-        cycle_count >= ``min_cycle_count`` OR its latest condition is in ``conditions``.
-        """
+        """Qualifies if peak cycle_count >= min_cycle_count OR condition in conditions.
+        Battery-less devices are excluded (no non-null rows)."""
         clauses = []
         params: dict[str, Any] = {"cid": company_id}
         if min_cycle_count is not None:
@@ -197,11 +175,7 @@ class FleetDB:
     def devices_by_os(
         self, company_id: str, product_name: str, older_than_major: int
     ) -> list[dict[str, Any]]:
-        """Devices of a given OS family running a major version below ``older_than_major``.
-
-        ``product_name`` (e.g. 'macOS') is required so the query never cross-compares
-        OS families (a Windows '10.0' is not 'older than macOS 15').
-        """
+        """OS-family-scoped version floor (product_name required, so families never cross-compare)."""
         cur = self.conn.execute(
             _LATEST_CTE
             + """
@@ -225,8 +199,7 @@ class FleetDB:
         status: str | None = None,
         latest_only: bool = True,
     ) -> list[dict[str, Any]]:
-        """Compliance rows (optionally the latest snapshot per device), filtered by
-        check/severity/status. Returns distinct device rows with their evidence."""
+        """Compliance rows (latest per device by default), filtered by check/severity/status."""
         where = ["c.company_id = :cid"]
         params: dict[str, Any] = {"cid": company_id}
         if check_id:
@@ -260,11 +233,7 @@ class FleetDB:
     def compliance_drift(
         self, company_id: str, check_id: str, direction: str = "pass_to_fail"
     ) -> list[dict[str, Any]]:
-        """Devices whose ``check_id`` status flipped over the window.
-
-        direction='pass_to_fail': passed on day one, failing by the end (drift/regression).
-        Returns the device plus the timestamp of the first failing snapshot after a pass.
-        """
+        """Devices whose check_id status flipped over the window, with the first-flip timestamp."""
         rows: list[dict[str, Any]] = []
         for device_id in self.device_ids(company_id):
             cur = self.conn.execute(
@@ -354,7 +323,6 @@ class FleetDB:
         )
         return _rows(cur)
 
-    # --- audit sink --------------------------------------------------------
     def append_audit(
         self,
         *,

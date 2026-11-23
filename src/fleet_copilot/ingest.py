@@ -1,13 +1,4 @@
-"""Load the NDJSON telemetry into a local SQLite database.
-
-Design choice: the LLM plans and narrates; **SQL computes.** Flattening the nested
-telemetry into indexed, tenant-stamped tables gives us three things in one move —
-deterministic answers, reproducibility, and citable evidence (every row keeps its
-``snapshot_id`` + ``collected_at``). ``company_id``/``device_id``/``collected_at`` are
-denormalized onto every child row so tenant filtering needs no join.
-
-Ingest is idempotent: it drops and recreates the schema each run.
-"""
+"""Load the NDJSON telemetry into a flat, indexed, tenant-stamped SQLite db (idempotent)."""
 
 from __future__ import annotations
 
@@ -24,25 +15,25 @@ CREATE TABLE snapshots (
     employee_id          TEXT,
     collected_at         TEXT NOT NULL,
     agent_version        TEXT,
-    platform             TEXT,          -- 'darwin' | 'win32'
-    product_name         TEXT,          -- 'macOS' | 'Windows'
-    os_version           TEXT,          -- e.g. '14.5'
-    os_major             INTEGER,       -- parsed leading integer of os_version
+    platform             TEXT,
+    product_name         TEXT,
+    os_version           TEXT,
+    os_major             INTEGER,
     model_name           TEXT,
     processor            TEXT,
     total_memory_bytes   INTEGER,
     used_memory_bytes    INTEGER,
-    ram_used_pct         REAL,          -- NULL when memory block absent
-    disk_size_bytes      INTEGER,       -- root ('/') volume, else first volume
+    ram_used_pct         REAL,
+    disk_size_bytes      INTEGER,
     disk_available_bytes INTEGER,
-    disk_free_pct        REAL,          -- NULL when no disk volume
-    battery_present      INTEGER,       -- 1/0/NULL (NULL = no battery block at all)
+    disk_free_pct        REAL,
+    battery_present      INTEGER,       -- NULL = no battery block at all
     battery_pct          INTEGER,
     battery_cycle_count  INTEGER,
     battery_condition    TEXT,
     battery_full_charge  INTEGER,
-    has_network          INTEGER,       -- 1/0
-    raw_json             TEXT NOT NULL  -- full original record, for fidelity/citation
+    has_network          INTEGER,
+    raw_json             TEXT NOT NULL
 );
 
 CREATE TABLE compliance_results (
@@ -51,8 +42,8 @@ CREATE TABLE compliance_results (
     company_id    TEXT NOT NULL,
     collected_at  TEXT NOT NULL,
     check_id      TEXT NOT NULL,
-    status        TEXT NOT NULL,        -- 'pass' | 'fail'
-    severity      TEXT NOT NULL         -- 'high' | 'medium' | 'low'
+    status        TEXT NOT NULL,
+    severity      TEXT NOT NULL
 );
 
 CREATE TABLE installed_software (
@@ -107,7 +98,7 @@ def _flatten(record: dict[str, Any]) -> dict[str, Any]:
     os_ = record.get("os") or {}
     ident = record.get("device_identity") or {}
     mem = record.get("memory") or {}
-    battery = record.get("battery")  # may be absent entirely
+    battery = record.get("battery")  # may be absent
     volumes = record.get("disk_volumes") or []
     root = _root_volume(volumes)
 
@@ -150,7 +141,7 @@ def _flatten(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def ingest(dataset_path: Path, db_path: Path) -> dict[str, int]:
-    """(Re)build the SQLite database from the NDJSON file. Returns row counts."""
+    """(Re)build the db from the NDJSON file; returns row counts."""
     if db_path.exists():
         db_path.unlink()
 

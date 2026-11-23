@@ -1,9 +1,5 @@
-"""Drive one turn of the graph, including the human-approval interrupt/resume loop.
-
-Shared by the CLI and the live evaluation. ``approver`` is a callback that receives the
-approval request dict and returns True/False — the single point where a human decision
-enters the loop.
-"""
+"""Drive one turn of the graph, handling the approval interrupt/resume loop.
+approver(request)->bool is the single point where a human decision enters."""
 
 from __future__ import annotations
 
@@ -28,11 +24,7 @@ def run_turn(
     thread_id: str = "turn-1",
     max_approvals: int = 8,
 ) -> dict[str, Any]:
-    """Run the agent on ``question`` and return the final state dict.
-
-    When the graph pauses for approval, ``approver`` is consulted; with no approver,
-    the action is treated as denied (safe default).
-    """
+    """Run the agent and return the final state. No approver => actions are denied."""
     graph = build_graph(ctx, model)
     config = {"configurable": {"thread_id": thread_id}}
     state = graph.invoke({"question": question}, config)
@@ -44,6 +36,4 @@ def run_turn(
         approved = approver(request) if approver else False
         state = graph.invoke(Command(resume={"approved": approved}), config)
 
-    # merge the final persisted state (invoke returns the last node's view)
-    final = graph.get_state(config).values
-    return final
+    return graph.get_state(config).values

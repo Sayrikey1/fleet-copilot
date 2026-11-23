@@ -1,17 +1,6 @@
-"""Action (state-changing) tools — the four required by the brief.
-
-Every action is **held for human approval** (never auto-executed) and every validator
-enforces two guardrails at the data layer before an action can even be *proposed*:
-
-1. **Tenant isolation** — the target device/employee must belong to ``ctx.company_id``.
-2. **Sufficient evidence** — there must be real telemetry justifying the action
-   (a device low on the component, actually failing the check, or genuinely
-   replacement-worthy). No evidence ⇒ the action is refused with a reason.
-
-Executors are deterministic and side-effect-light (they mint a stable id from the
-canonical params); in a real deployment they would call the ticketing / procurement /
-messaging systems.
-"""
+"""The four state-changing action tools. Each is held for human approval, and each
+validator enforces tenant membership + sufficient evidence before an action can be
+proposed. Executors mint a stable id (a real deployment would call the backing systems)."""
 
 from __future__ import annotations
 
@@ -44,9 +33,7 @@ def _ev(rows: list[dict[str, Any]], source: str, keep: tuple[str, ...]) -> list[
     ]
 
 
-# --------------------------------------------------------------------------- #
 # create_upgrade_order
-# --------------------------------------------------------------------------- #
 class UpgradeOrderParams(BaseModel):
     device_id: str = Field(description="Device to upgrade.")
     component: str = Field(description="One of 'disk', 'memory', 'battery'.")
@@ -98,9 +85,7 @@ def create_upgrade_order(ctx: SessionContext, p: UpgradeOrderParams) -> dict[str
             "status": "created"}
 
 
-# --------------------------------------------------------------------------- #
 # open_remediation_ticket
-# --------------------------------------------------------------------------- #
 class RemediationTicketParams(BaseModel):
     device_id: str = Field(description="Device with the failing check.")
     check_id: str = Field(description="Compliance check, e.g. 'os_up_to_date' or 'screen_lock'.")
@@ -137,9 +122,7 @@ def open_remediation_ticket(ctx: SessionContext, p: RemediationTicketParams) -> 
     return {"ticket_id": ticket_id, "device_id": p.device_id, "check_id": p.check_id, "status": "open"}
 
 
-# --------------------------------------------------------------------------- #
 # flag_device_for_replacement
-# --------------------------------------------------------------------------- #
 class ReplacementParams(BaseModel):
     device_id: str = Field(description="Device to flag for replacement.")
     reason: str = Field(description="Why the device should be replaced.")
@@ -184,9 +167,7 @@ def flag_device_for_replacement(ctx: SessionContext, p: ReplacementParams) -> di
     return {"flag_id": flag_id, "device_id": p.device_id, "reason": p.reason, "status": "flagged"}
 
 
-# --------------------------------------------------------------------------- #
 # notify_employee
-# --------------------------------------------------------------------------- #
 class NotifyParams(BaseModel):
     employee_id: str = Field(description="Employee to notify (must belong to this company).")
     message: str = Field(description="The message to send.")

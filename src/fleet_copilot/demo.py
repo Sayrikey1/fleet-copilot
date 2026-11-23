@@ -1,9 +1,4 @@
-"""Offline, scripted demonstration of the full agent pipeline — no API key required.
-
-Each scenario drives the real graph with a scripted model, so graders can see grounding,
-citations, the human-approval gate, and guardrail refusals working end to end and
-deterministically. This is the fastest way to evaluate the system without credentials.
-"""
+"""Offline scripted demo of the full pipeline (no API key): grounding, approval, guardrails."""
 
 from __future__ import annotations
 
@@ -18,8 +13,6 @@ from .settings import Settings
 
 
 class _ScriptedModel:
-    """A minimal offline stand-in for ChatAnthropic (replays scripted responses)."""
-
     def __init__(self, responses: list[AIMessage]) -> None:
         self._responses = responses
         self._i = 0
@@ -41,7 +34,6 @@ def _call(name: str, args: dict[str, Any]) -> AIMessage:
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": f"call-{name}"}])
 
 
-# (title, company, question, scripted responses, auto-approve decision)
 SCENARIOS: list[dict[str, Any]] = [
     {
         "title": "Grounded Q&A — low disk (with citations)",
